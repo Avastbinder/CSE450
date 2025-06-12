@@ -19,7 +19,6 @@ def feature_mod(data):
   data['month'] = pd.DatetimeIndex(data['dteday']).month
   data['year'] = pd.DatetimeIndex(data['dteday']).year
   data.drop(columns=["dteday"], inplace=True)
-  data.drop(columns=["hum"], inplace=True)
 
   return data
 
@@ -27,9 +26,12 @@ bikes = feature_mod(bikes)
 bikes["users"] = bikes["casual"] + bikes["registered"]
 bikes.drop(columns=["casual", "registered"], inplace=True)
 bikes.filter(like="2011", axis=0)
+bikes.filter(like="2012", axis=0)
+bikes.filter(like="2013", axis=0)
 bikes.filter(like="2020", axis=0)
+bikes.filter(like="2021", axis=0)
 
-features = ['month', 'year', "hr", "temp_c", "feels_like_c", "windspeed", "weathersit", "season", "holiday", "workingday"]
+features = ['month', 'year', "hr", "temp_c", "feels_like_c", "windspeed", "weathersit", "hum", "season", "holiday", "workingday"]
 
 
 ### Model prep
@@ -104,12 +106,12 @@ test_X = pd.get_dummies(bikes[features], drop_first=True)
 test_X = test_X.reindex(columns=X.columns, fill_value=0)
 test_X = norm.transform(test_X)
 
-y_pred = np.round(dnn_model.predict(test_X),1)
+y_pred = np.round(dnn_model.predict(test_X),1).flatten()
 my_predictions = pd.DataFrame({
     'day': bikes['day'].values,
     'month': bikes['month'].values,
     'year': bikes['year'].values,
     'hour': bikes['hr'].values,
-    'predictions': y_pred.flatten
+    'predictions': y_pred
 })
 my_predictions.to_csv(path_or_buf="Projects/Module_4/team5-module4-predictions-december.csv", index=False)
