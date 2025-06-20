@@ -34,7 +34,8 @@ validation_generator = validation_datagen.flow_from_directory(
         batch_size=32,
         class_mode='sparse',
         subset="validation",
-        seed=42)
+        seed=42,
+        shuffle=False)
 
 target_names = ['Speed_20', 'Speed_30', 'Speed_50', 'Speed_60', 'Speed_70',
                'Speed_80','Speed_Limit_Ends', 'Speed_100', 'Speed_120', 'Overtaking_Prohibited',
@@ -50,25 +51,29 @@ target_names = ['Speed_20', 'Speed_30', 'Speed_50', 'Speed_60', 'Speed_70',
 ### Model Prep
 model = models.Sequential()
 model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(100, 100, 3)))
+model.add(layers.BatchNormalization())
 model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.BatchNormalization())
 model.add(layers.MaxPooling2D((2, 2)))
 model.add(layers.Conv2D(128, (3, 3), activation='relu'))
+model.add(layers.BatchNormalization())
 model.add(layers.MaxPooling2D((2, 2)))
 model.add(layers.Conv2D(256, (3, 3), activation='relu'))
+model.add(layers.BatchNormalization())
 model.add(layers.Flatten())
 model.add(layers.Dense(64, activation='relu'))
-model.add(layers.Dense(43))
+model.add(layers.Dense(43, activation='softmax'))
+model.add(layers.Dropout(0.5))
 model.summary()
 
 
 ### Model
 model.compile(optimizer='adam',
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), metrics=['accuracy'])
 
 history = model.fit(
     train_generator, 
     epochs=5, 
-    validation_split = .2,
     validation_data=validation_generator
 )
 
@@ -100,7 +105,7 @@ predictions = model.predict(validation_generator)
 predictions_new = np.argmax(predictions,axis=1)
 
 # Confusion matrix
-cm = confusion_matrix(target_names, predictions_new)
+cm = confusion_matrix(validation_generator.classes, predictions_new)
 print(f"Confusion Matrix: \n{cm}")
 cmd = ConfusionMatrixDisplay(cm, display_labels=target_names)
 fig, ax = plt.subplots(figsize=(13,13))
