@@ -2,11 +2,12 @@ import tensorflow as tf
 from tensorflow.keras import datasets, layers, models
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from sklearn.metrics import confusion_matrix, classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix, classification_report, confusion_matrix, ConfusionMatrixDisplay, accuracy_score
+from tensorflow.keras.preprocessing import image_dataset_from_directory
 
 print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU'))) # Confirm model is using GPU
-
 
 ### Training data
 training_dir = r'C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_5\content\training'
@@ -63,7 +64,7 @@ model.add(layers.BatchNormalization())
 model.add(layers.Flatten())
 model.add(layers.Dense(64, activation='relu'))
 model.add(layers.Dense(43, activation='softmax'))
-model.add(layers.Dropout(0.5))
+model.add(layers.Dropout(0.2))
 model.summary()
 
 
@@ -73,7 +74,7 @@ model.compile(optimizer='adam',
 
 history = model.fit(
     train_generator, 
-    epochs=5, 
+    epochs=3, 
     validation_data=validation_generator
 )
 
@@ -112,3 +113,51 @@ fig, ax = plt.subplots(figsize=(13,13))
 cmd.plot(ax=ax, cmap="Blues", values_format='.5g')
 
 print(f"Classification Report: \n{classification_report(validation_generator.classes, predictions_new, target_names=target_names)}") 
+
+
+### mini holdout test
+test_dir = r'C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_5\content\mini_holdout'
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+test_generator = test_datagen.flow_from_directory(
+        test_dir,
+        classes=['mini_holdout'],
+        target_size=image_size,
+        class_mode='sparse',
+        shuffle=False)
+probabilities = model.predict(test_generator)
+predictions = [np.argmax(probas) for probas in probabilities]
+
+# Test against answer
+answers_url = 'https://raw.githubusercontent.com/byui-cse/cse450-course/master/data/roadsigns/mini_holdout_answers.csv'
+answers_df = pd.read_csv(answers_url)
+
+filenames = [f.split('/')[-1] for f in test_generator.filenames]
+preds_df = pd.DataFrame({
+    'Filename': filenames,
+    'Predicted': predictions
+})
+
+merged_df = pd.merge(answers_df, preds_df, on='Filename')
+y_true = merged_df['ClassId']
+y_pred = merged_df['Predicted']
+
+print("\nHoldout Accuracy:", accuracy_score(y_true, y_pred))
+print("\nHoldout Classification Report:\n", classification_report(y_true, y_pred))
+
+
+### holdout csv
+test_dir = r'C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_5\content\holdout'
+
+test_datagen = ImageDataGenerator(rescale=1./255)
+test_generator = test_datagen.flow_from_directory(
+        test_dir,
+        classes=['holdout'],
+        target_size=image_size,
+        class_mode='sparse',
+        shuffle=False)
+probabilities = model.predict(test_generator)
+predictions = [np.argmax(probas) for probas in probabilities]
+
+my_predictions = pd.DataFrame({'Predicted': predictions})
+my_predictions.to_csv(path_or_buf="Projects/Module_5/team5-module5-predictions.csv", index=False)
