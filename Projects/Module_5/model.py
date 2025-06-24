@@ -3,6 +3,7 @@ from tensorflow.keras import datasets, layers, models
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import os
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.metrics import confusion_matrix, classification_report, confusion_matrix, ConfusionMatrixDisplay, accuracy_score
 from tensorflow.keras.preprocessing import image_dataset_from_directory
@@ -52,12 +53,9 @@ target_names = ['Speed_20', 'Speed_30', 'Speed_50', 'Speed_60', 'Speed_70',
 ### Model Prep
 model = models.Sequential()
 model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(100, 100, 3)))
-model.add(layers.BatchNormalization())
 model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-model.add(layers.BatchNormalization())
 model.add(layers.MaxPooling2D((2, 2)))
 model.add(layers.Conv2D(128, (3, 3), activation='relu'))
-model.add(layers.BatchNormalization())
 model.add(layers.MaxPooling2D((2, 2)))
 model.add(layers.Conv2D(256, (3, 3), activation='relu'))
 model.add(layers.BatchNormalization())
@@ -74,7 +72,7 @@ model.compile(optimizer='adam',
 
 history = model.fit(
     train_generator, 
-    epochs=3, 
+    epochs=5, 
     validation_data=validation_generator
 )
 
@@ -118,21 +116,25 @@ print(f"Classification Report: \n{classification_report(validation_generator.cla
 ### mini holdout test
 test_dir = r'C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_5\content\mini_holdout'
 
-test_datagen = ImageDataGenerator(rescale=1./255)
-test_generator = test_datagen.flow_from_directory(
-        test_dir,
-        classes=['mini_holdout'],
-        target_size=image_size,
-        class_mode='sparse',
-        shuffle=False)
-probabilities = model.predict(test_generator)
+filenames = sorted([
+    f for f in os.listdir(test_dir)
+    if os.path.isfile(os.path.join(test_dir, f)) and f.endswith('.jpg')
+])
+
+test_dataset = tf.keras.preprocessing.image_dataset_from_directory(
+    test_dir,
+    labels=None,
+    shuffle=False,
+    image_size=image_size,
+    batch_size=32
+)
+probabilities = model.predict(test_dataset)
 predictions = [np.argmax(probas) for probas in probabilities]
 
 # Test against answer
 answers_url = 'https://raw.githubusercontent.com/byui-cse/cse450-course/master/data/roadsigns/mini_holdout_answers.csv'
 answers_df = pd.read_csv(answers_url)
 
-filenames = [f.split('/')[-1] for f in test_generator.filenames]
 preds_df = pd.DataFrame({
     'Filename': filenames,
     'Predicted': predictions
@@ -149,15 +151,23 @@ print("\nHoldout Classification Report:\n", classification_report(y_true, y_pred
 ### holdout csv
 test_dir = r'C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_5\content\holdout'
 
-test_datagen = ImageDataGenerator(rescale=1./255)
-test_generator = test_datagen.flow_from_directory(
-        test_dir,
-        classes=['holdout'],
-        target_size=image_size,
-        class_mode='sparse',
-        shuffle=False)
-probabilities = model.predict(test_generator)
+filenames = sorted([
+    f for f in os.listdir(test_dir)
+    if os.path.isfile(os.path.join(test_dir, f)) and f.endswith('.jpg')
+])
+
+test_dataset = tf.keras.preprocessing.image_dataset_from_directory(
+    test_dir,
+    labels=None,
+    shuffle=False,
+    image_size=image_size,
+    batch_size=32
+)
+probabilities = model.predict(test_dataset)
 predictions = [np.argmax(probas) for probas in probabilities]
 
-my_predictions = pd.DataFrame({'Predicted': predictions})
+my_predictions = pd.DataFrame({
+    'Filename': filenames,
+    'Predicted': predictions
+})
 my_predictions.to_csv(path_or_buf="Projects/Module_5/team5-module5-predictions.csv", index=False)
