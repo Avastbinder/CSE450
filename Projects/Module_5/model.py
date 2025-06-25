@@ -151,23 +151,15 @@ print("\nHoldout Classification Report:\n", classification_report(y_true, y_pred
 ### holdout csv
 test_dir = r'C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_5\content\holdout'
 
-filenames = sorted([
-    f for f in os.listdir(test_dir)
-    if os.path.isfile(os.path.join(test_dir, f)) and f.endswith('.jpg')
-])
-
-test_dataset = tf.keras.preprocessing.image_dataset_from_directory(
-    test_dir,
-    labels=None,
-    shuffle=False,
-    image_size=image_size,
-    batch_size=32
-)
-probabilities = model.predict(test_dataset)
+test_datagen = ImageDataGenerator(rescale=1./255)
+test_generator = test_datagen.flow_from_directory(
+        test_dir,
+        classes=['holdout'],
+        target_size=image_size,
+        class_mode='sparse',
+        shuffle=False)
+probabilities = model.predict(test_generator)
 predictions = [np.argmax(probas) for probas in probabilities]
 
-my_predictions = pd.DataFrame({
-    'Filename': filenames,
-    'Predicted': predictions
-})
+my_predictions = pd.DataFrame({'Predicted': predictions})
 my_predictions.to_csv(path_or_buf="Projects/Module_5/team5-module5-predictions.csv", index=False)
