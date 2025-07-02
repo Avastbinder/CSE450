@@ -157,7 +157,9 @@ test_generator = test_datagen.flow_from_directory(
         classes=['holdout'],
         target_size=image_size,
         class_mode='sparse',
-        shuffle=False)
+        shuffle=False
+)
+
 probabilities = model.predict(test_generator)
 predictions = [np.argmax(probas) for probas in probabilities]
 
