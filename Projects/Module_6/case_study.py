@@ -456,10 +456,10 @@ def produce_sample(model, vectorize_layer, vocabulary, temp, epoch, prompt):
   #print('Temp: ' + str(temp) + '\n')
   print(postprocess_text(result[0].numpy().decode('utf-8')))
   #print('\n\n')
-  print('Epoch: ' + str(epoch) + '\n', file=open(path + 'tree.txt', 'a'))
-  print('Temp: ' + str(temp) + '\n', file=open(path + 'tree.txt', 'a'))
-  print(postprocess_text(result[0].numpy().decode('utf-8')), file=open(path + 'tree.txt', 'a'))
-  print('\n\n', file=open(path + 'tree.txt', 'a'))
+  print('Epoch: ' + str(epoch) + '\n', file=open(path + r'\tree.txt', 'a'))
+  print('Temp: ' + str(temp) + '\n', file=open(path + r'\tree.txt', 'a'))
+  print(postprocess_text(result[0].numpy().decode('utf-8')), file=open(path + r'\tree.txt', 'a'))
+  print('\n\n', file=open(path + r'\tree.txt', 'a'))
   del states
   del next_char
   del result
