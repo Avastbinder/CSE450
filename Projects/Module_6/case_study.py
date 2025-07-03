@@ -411,31 +411,25 @@ class OneStep(tf.keras.Model):
 
   @tf.function
   def generate_one_step(self, inputs, states=None):
-    # Convert strings to token IDs.
-    #input_chars = tf.strings.unicode_split(inputs, 'UTF-8')
+    if states is not None:
+        # Enforce consistent shape
+        states = [
+            [tf.reshape(h, (1, self.model.lstm1.units)), tf.reshape(c, (1, self.model.lstm1.units))]
+            for h, c in states
+        ]
+
     input_ids = self.vectorize_layer(inputs)
-    #print(input_ids)
 
-    # Run the model.
-    # predicted_logits.shape is [batch, char, next_char_logits]
-    predicted_logits, states =  self.model(inputs=input_ids, states=states,
-                                          return_state=True)
-    del input_ids
-    # Only use the last prediction.
-    predicted_logits = predicted_logits[:, -1, :]
-    predicted_logits = predicted_logits/self.temperature
+    # Explicitly set shape to avoid shape mismatches
+    input_ids.set_shape([1, None])  # (batch=1, sequence length unknown)
 
-    # Apply the prediction mask: prevent "" or "[UNK]" from being generated.
-    predicted_logits = predicted_logits + self.prediction_mask
+    predicted_logits, states = self.model(inputs=input_ids, states=states, return_state=True)
 
-    # Sample the output logits to generate token IDs.
+    predicted_logits = predicted_logits[:, -1, :] / self.temperature
+    predicted_logits += self.prediction_mask
     predicted_ids = tf.random.categorical(predicted_logits, num_samples=1)
-    del predicted_logits
     predicted_ids = tf.squeeze(predicted_ids, axis=-1)
 
-    #print(predicted_ids[0])
-
-    # Return the characters and model state.
     return words_from_ids(predicted_ids), states
   
 def produce_sample(model, vectorize_layer, vocabulary, temp, epoch, prompt):
@@ -484,42 +478,37 @@ else:
   start_epoch = epoch_to_pickup
 for e in range(start_epoch, num_epochs_total):
   success = False
-  while(success == False):
-    try:
-      print("epoch: ", e)
-      # if e < 50:
-      #   new_text = getRandomText(numbooks = 20)
-      # else:
-      #   new_text = sherlock_text + getRandomText(numbooks = (num_epochs_total - e)//10)
-      new_text = getMyText()
-      dataset = text_to_dataset(new_text)
-      del new_text
-      dataset = setup_dataset(dataset)
-      #opt = tf.keras.optimizers.Adam(learning_rate=0.002*(0.97**e))
-      #model.compile(optimizer=opt, loss=loss)
-      model.optimizer.learning_rate.assign(0.002*(0.99**e))
-      model.fit(dataset, epochs=1, verbose=1)
-      print("finished training...")
-      del dataset
-      #print("saving weights...")
-      #model.save_weights(path + "lstm_gru_SH_modelweights_fall2023-random_urls.h5")
-      #print("weights saved...")
-      for temp in [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
-        produce_sample(model,vectorize_layer,vocabulary, temp, e, 'Emma sat thinking about')
-      print("samples produced...")
-      gc.collect()
-      print("garbage collected...")
-      tf.keras.backend.clear_session()
-      print("session cleared (to save memory)...")
-      #tf.config.experimental.reset_all()
-      success = True
-    except:
-      gc.collect()
-      tf.keras.backend.clear_session()
-      #tf.config.experimental.reset_all()
+  while not success:
       try:
-        del dataset
-      except:
-        print("dataset already deleted")
-      print("retrying epoch: " , e)
+          print("epoch: ", e)
+          new_text = getMyText()
+          dataset = text_to_dataset(new_text)
+          del new_text
+          dataset = setup_dataset(dataset)
+          
+          model.optimizer.learning_rate.assign(0.002 * (0.99 ** e))
+          model.fit(dataset, epochs=1, verbose=1)
+          print("finished training...")
+          del dataset
+          success = True  # ✅ Success is now correctly marked
+      except Exception as ex:
+          print(f"Training error: {ex}")
+          gc.collect()
+          tf.keras.backend.clear_session()
+          try:
+              del dataset
+          except:
+              print("dataset already deleted")
+          print("retrying epoch: " , e)
+
+try:
+    for temp in [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+        produce_sample(model, vectorize_layer, vocabulary, temp, e, 'Emma sat thinking about')
+    print("samples produced...")
+except Exception as ex:
+    print(f"Sampling error (not retraining): {ex}")
+
+gc.collect()
+tf.keras.backend.clear_session()
+print("session cleared (to save memory)...")
 
