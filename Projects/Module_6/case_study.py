@@ -69,8 +69,8 @@ def postprocess_text(text):
     return text
 
 def getMyText():
-    file_name = 'austen.txt'
-    file_url = 'https://raw.githubusercontent.com/byui-cse/cse450-course/master/data/austen/austen.txt'
+    file_name = 'mark_twain2.txt'
+    file_url = 'https://www.gutenberg.org/cache/epub/3186/pg3186.txt'
     local_dir = r"C:\Users\ajvas\Documents\GitHub\CSE450\Projects\Module_6"
     local_path = os.path.join(local_dir, file_name)
 
@@ -166,18 +166,15 @@ if restart:
   vectorize_layer = TextVectorization(
       standardize='lower',
       split='whitespace',
-      max_tokens=vocab_size,
+      max_tokens=8192,
       output_mode='int',
-      )
+  )
 
-if restart:
   vectorize_layer.adapt([vocab_text])
-
-if restart:
   vocabulary = vectorize_layer.get_vocabulary()
+  vocab_size = len(vocabulary)
 
-if restart:
-  with open(path + r"\vocabulary.txt", "w") as file:
+  with open(path + r"\vocabulary.txt", "w", encoding="utf-8") as file:
     for word in vocabulary:
         file.write(word + "\n")
 
@@ -267,88 +264,88 @@ if restart:
 
 # Create our custom model. Given a sequence of characters, this
 # model's job is to predict what character should come next.
-class AustenTextModel(tf.keras.Model):
-
-  # This is our class constructor method, it will be executed when
-  # we first create an instance of the class
-  def __init__(self, vocab_size, embedding_dim, rnn_units):
+class MarkTwainTextModel(tf.keras.Model):
+  def __init__(self, vocab_size, embedding_dim, rnn_units, bidirectional=False):
     super().__init__()
-
-    # Our model will have three layers:
-
-    # 1. An embedding layer that handles the encoding of our vocabulary into
-    #    a vector of values suitable for a neural network
     self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
 
-    # 2. A GRU layer that handles the "memory" aspects of our RNN. If you're
-    #    wondering why we use GRU instead of LSTM, and whether LSTM is better,
-    #    take a look at this article: https://datascience.stackexchange.com/questions/14581/when-to-use-gru-over-lstm
-    #    then consider trying out LSTM instead (or in addition to!)
-    #self.gru = tf.keras.layers.GRU(rnn_units, return_sequences=True, return_state=True)
-    self.lstm1 = tf.keras.layers.LSTM(rnn_units, return_sequences=True, return_state=True)
-    self.lstm2 = tf.keras.layers.LSTM(rnn_units, return_sequences=True, return_state=True)
-    self.lstm3 = tf.keras.layers.LSTM(rnn_units, return_sequences=True, return_state=True)
-    #self.lstm4 = tf.keras.layers.LSTM(rnn_units, return_sequences=True, return_state=True)
+    # LSTM layers
+    if bidirectional:
+      self.lstm1 = tf.keras.layers.Bidirectional(
+        tf.keras.layers.LSTM(rnn_units, return_sequences=True, return_state=True),
+        merge_mode='concat'
+      )
+      self.lstm1_is_bidir = True
+      self.rnn_units = rnn_units * 2
+    else:
+      self.lstm1 = tf.keras.layers.LSTM(rnn_units, return_sequences=True, return_state=True)
+      self.lstm1_is_bidir = False
+      self.rnn_units = rnn_units
 
+    self.lstm2 = tf.keras.layers.LSTM(self.rnn_units, return_sequences=True, return_state=True)
+    self.lstm3 = tf.keras.layers.LSTM(self.rnn_units, return_sequences=True, return_state=True)
 
-    self.hidden1 = tf.keras.layers.Dense(embedding_dim*64, activation='relu')
-    self.hidden2 = tf.keras.layers.Dense(embedding_dim*16, activation='relu')
-    #self.hidden3 = tf.keras.layers.Dense(embedding_dim*4, activation='relu')
+    # Layer normalization between LSTM layers
+    self.norm1 = tf.keras.layers.LayerNormalization()
+    self.norm2 = tf.keras.layers.LayerNormalization()
 
-    # 3. Our output layer that will give us a set of probabilities for each
-    #    character in our vocabulary.
-    self.dense = tf.keras.layers.Dense(vocab_size)
+    # Residual Dense layers
+    self.hidden1 = tf.keras.layers.Dense(embedding_dim * 64, activation='relu')
+    self.hidden2 = tf.keras.layers.Dense(embedding_dim * 16, activation='relu')
+    self.residual_proj = tf.keras.layers.Dense(self.rnn_units)
 
-  # This function will be executed for each epoch of our training. Here
-  # we will manually feed information from one layer of our network to the
-  # next.
+    self.output_dense = tf.keras.layers.Dense(vocab_size)
+
   def call(self, inputs, states=None, return_state=False, training=False):
-    x = inputs
-
-    # 1. Feed the inputs into the embedding layer, and tell it if we are
-    #    training or predicting
-    x = self.embedding(x, training=training)
-
-    # 2. If we don't have any state in memory yet, get the initial random state
-    #    from our GRUI layer.
     batch_size = tf.shape(inputs)[0]
+    x = self.embedding(inputs, training=training)
+    residual = x  # For optional residual connection later
+
+    # Initialize states
+    def init_state():
+        return [tf.zeros([batch_size, self.rnn_units // (2 if self.lstm1_is_bidir else 1)])] * 2
 
     if states is None:
-      states1 = [tf.zeros([batch_size, self.lstm1.units]), tf.zeros([batch_size, self.lstm1.units])]
-      states2 = [tf.zeros([batch_size, self.lstm2.units]), tf.zeros([batch_size, self.lstm2.units])]
-      states3 = [tf.zeros([batch_size, self.lstm3.units]), tf.zeros([batch_size, self.lstm3.units])]
-      #states4 = [tf.zeros([batch_size, self.lstm4.units]), tf.zeros([batch_size, self.lstm4.units])]
+      states1 = init_state()
+      states2 = init_state()
+      states3 = init_state()
     else:
-      states1 = states[0]
-      states2 = states[1]
-      states3 = states[2]
-      #states4 = states[3]
-    # 3. Now, feed the vectorized input along with the current state of memory
-    #    into the gru layer.
-    x, state_h_1, state_c_1 = self.lstm1(x, initial_state=states1, training=training)
-    states_out_1 = [state_h_1,state_c_1]
+      states1, states2, states3 = states
 
-    x, state_h_2, state_c_2 = self.lstm2(x, initial_state=states2, training=training)
-    states_out_2 = [state_h_2,state_c_2]
+    # Pass through LSTM layers
+    if self.lstm1_is_bidir:
+      x, *bidir_states = self.lstm1(x, training=training)
+      states_out_1 = [
+          tf.concat([bidir_states[0], bidir_states[2]], axis=-1),
+          tf.concat([bidir_states[1], bidir_states[3]], axis=-1)
+      ]
+    else:
+      x, h1, c1 = self.lstm1(x, initial_state=states1, training=training)
+      states_out_1 = [h1, c1]
 
-    x, state_h_3, state_c_3 = self.lstm3(x, initial_state=states3, training=training)
-    states_out_3 = [state_h_3,state_c_3]
+    x = self.norm1(x)
 
-    #x, state_h_4, state_c_4 = self.lstm4(x, initial_state=states4, training=training)
-    #states_out_4 = [state_h_4,state_c_4]
+    x, h2, c2 = self.lstm2(x, initial_state=states2, training=training)
+    states_out_2 = [h2, c2]
 
-    states_out = [states_out_1, states_out_2, states_out_3]#, states_out_4]
-    #states_out = [states_out_1, states_out_2]
+    x = self.norm2(x)
 
-    x = self.hidden1(x,training=training)
-    x = self.hidden2(x,training=training)
-    #x = self.hidden3(x,training=training)
-    # 4. Finally, pass the results on to the dense layer
-    x = self.dense(x, training=training)
+    x, h3, c3 = self.lstm3(x, initial_state=states3, training=training)
+    states_out_3 = [h3, c3]
 
-    # 5. Return the results
+    # Optional residual connection
+    projected_residual = self.residual_proj(residual)
+    x += projected_residual
+
+    # Dense layers
+    x = self.hidden1(x, training=training)
+    x = self.hidden2(x, training=training)
+
+    # Output logits
+    x = self.output_dense(x, training=training)
+
     if return_state:
-      return x, states_out
+      return x, [states_out_1, states_out_2, states_out_3]
     else:
       return x
     
@@ -367,7 +364,7 @@ else:
 embedding_dim = 128
 rnn_units = 512
 
-model = AustenTextModel(vocab_size, embedding_dim, rnn_units)
+model = MarkTwainTextModel(vocab_size, embedding_dim, rnn_units)
 
 # Verify the output of our model is correct by running one sample through
 # This will also compile the model for us. This step will take a bit.
@@ -396,7 +393,7 @@ class OneStep(tf.keras.Model):
     #print("initialized")
 
     # Create a mask to prevent "" or "[UNK]" from being generated.
-    skip_ids = StringLookup(vocabulary=list(vocabulary))(['', '[UNK]'])[:, None]
+    skip_ids = StringLookup(vocabulary=vocabulary, mask_token=None)(['', '[UNK]'])[:, None]
     #print(skip_ids)
     #print("3")
     sparse_mask = tf.SparseTensor(
@@ -443,7 +440,7 @@ def produce_sample(model, vectorize_layer, vocabulary, temp, epoch, prompt):
   next_char = tf.constant([preprocess_text(prompt)])
   result = [tf.constant([prompt])]
 
-  for n in range(200):
+  for n in range(1000):
     next_char, states = one_step_model.generate_one_step(next_char, states=states)
     #print(next_char)
     result.append(next_char)
@@ -455,11 +452,11 @@ def produce_sample(model, vectorize_layer, vocabulary, temp, epoch, prompt):
   # Print the results formatted.
   #print('Temp: ' + str(temp) + '\n')
   print(postprocess_text(result[0].numpy().decode('utf-8')))
-  #print('\n\n')
-  print('Epoch: ' + str(epoch) + '\n', file=open(path + r'\tree.txt', 'a'))
-  print('Temp: ' + str(temp) + '\n', file=open(path + r'\tree.txt', 'a'))
-  print(postprocess_text(result[0].numpy().decode('utf-8')), file=open(path + r'\tree.txt', 'a'))
-  print('\n\n', file=open(path + r'\tree.txt', 'a'))
+  with open(path + r'\tree.txt', 'a', encoding='utf-8') as file:
+      print('Epoch: ' + str(epoch) + '\n', file=file)
+      print('Temp: ' + str(temp) + '\n', file=file)
+      print(postprocess_text(result[0].numpy().decode('utf-8')), file=file)
+      print('\n\n', file=file)
   del states
   del next_char
   del result
@@ -468,10 +465,10 @@ if restart == False:
   model.load_weights(path + "lstm_gru_SH_modelweights_fall2023-random_urls.h5")
 
 loss = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
-opt = tf.keras.optimizers.Adam(learning_rate=0.002)
+opt = tf.keras.optimizers.Adam(learning_rate=0.002, clipnorm=1.0)
 model.compile(optimizer=opt, loss=loss)
 
-num_epochs_total = 5
+num_epochs_total = 150
 if restart:
   start_epoch = 0
 else:
@@ -486,11 +483,11 @@ for e in range(start_epoch, num_epochs_total):
           del new_text
           dataset = setup_dataset(dataset)
           
-          model.optimizer.learning_rate.assign(0.002 * (0.99 ** e))
+          model.optimizer.learning_rate.assign(0.002 * (0.98 ** e))
           model.fit(dataset, epochs=1, verbose=1)
           print("finished training...")
           del dataset
-          success = True  # ✅ Success is now correctly marked
+          success = True
       except Exception as ex:
           print(f"Training error: {ex}")
           gc.collect()
@@ -503,7 +500,7 @@ for e in range(start_epoch, num_epochs_total):
 
 try:
     for temp in [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
-        produce_sample(model, vectorize_layer, vocabulary, temp, e, 'Emma sat thinking about')
+        produce_sample(model, vectorize_layer, vocabulary, temp, e, 'The world seemed like such a peaceful place until the magic tree was discovered in London.')
     print("samples produced...")
 except Exception as ex:
     print(f"Sampling error (not retraining): {ex}")
