@@ -1,71 +1,65 @@
 import pandas as pd
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
+import numpy as np
+from xgboost import XGBRegressor
 from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-import time
-import os
+from pathlib import Path
 
-current_path = os.getcwd()
-data = pd.read_csv(f"{current_path}/data/2015.csv")
-for datapoint in data:
-    pd.assign
+data_folder = Path(__file__).parent
+data = pd.read_csv(f"{data_folder}/data/data.csv")
 
-### Feature modification
-def feature_mod(data):
-  
-
-features = ['Country','Region','Happiness Rank','Happiness Score','Economy (GDP per Capita)','Family','Health (Life Expectancy)','Freedom','Trust (Government Corruption)','Generosity','Dystopia Residual']
+features = ['Country','Economy (GDP per Capita)','Family','Health (Life Expectancy)','Freedom','Trust (Government Corruption)','Generosity','year']
 # Features describe how important the citizens of the country think each feature is to improving overall happiness in a country. 
 
 ### Model prep
 X = pd.get_dummies(data[features], drop_first=True)
-y = data["users"]
+y = data["Happiness Score"]
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-
-norm = MinMaxScaler().fit(X_train)
-X_train = norm.transform(X_train)
-X_test = norm.transform(X_test)
-early_stop = keras.callbacks.EarlyStopping(monitor='val_mse', patience=30)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 
 ### Model
-dnn_model = keras.Sequential()
-dnn_model.add(Dense(128, input_dim=len(X_train[0]), activation='relu'))
-dnn_model.add(Dropout(.5))
-dnn_model.add(Dense(256, activation='relu'))
-dnn_model.add(Dense(64, activation='leaky_relu'))
-dnn_model.add(Dense(1, activation='relu'))
+# XGBoost model parameters
+model = XGBRegressor(
+    eta = 0.2,
+    max_depth = 0,
+    reg_lambda = 7,
+    reg_alpha = 1,
+    colsample_bytree = 0.6,
+    objective = 'reg:tweedie',
+    seed = 42
+)
 
-opt = keras.optimizers.Adam()
-dnn_model.compile(loss="mean_squared_error", optimizer=opt, metrics=['mse'])
-dnn_model.summary()
-
-start = time.time()
-
-dnn_model.fit(
-  X_train,
-  y_train,
-  validation_split=0.2,
-  verbose=0, 
-  epochs=20,
-  batch_size=20, 
-  callbacks=[early_stop],
-  shuffle=False)
-
-end = time.time()
-print(f"Training time: {end - start:.2f} seconds")
+# Run model
+model.fit(X_train, y_train)
+predictions = model.predict(X_test)
 
 
 ### Test
-y_pred = dnn_model.predict(X_test)
+y_pred = model.predict(X_test)
 
 rmse = root_mean_squared_error(y_test, y_pred)
 r2 = r2_score(y_test, y_pred)
 
+print("\nInternal test statistics:")
 print(f"RMSE: {rmse:.2f}")
 print(f"R²: {r2:.4f}")
+
+
+### holdout
+holdout = pd.read_csv(f"{data_folder}/data/2019_holdout.csv")
+test_holdout = pd.read_csv(f"{data_folder}/data/2019_actual.csv")
+
+test_X = pd.get_dummies(holdout[features], drop_first=True)
+test_X = test_X.reindex(columns=X.columns, fill_value=0)
+
+y_pred = np.round(model.predict(test_X),3)
+my_predictions = pd.DataFrame(y_pred, columns=['predictions'])
+my_predictions.to_csv(path_or_buf=data_folder / f"data/predictions.csv", index=False)
+
+rmse = root_mean_squared_error(test_holdout['Happiness Score'], y_pred)
+r2 = r2_score(test_holdout['Happiness Score'], y_pred)
+
+print("\nHoldout test statistics:")
+print(f"RMSE: {rmse:.2f}")
+print(f"R²: {r2:.4f}\n")
